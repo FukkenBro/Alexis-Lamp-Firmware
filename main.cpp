@@ -71,6 +71,7 @@ void heat();
 void pwrDown();
 void pulse();
 void poll();
+void blink();
 void fadeOut();
 void kill();
 void animation1(byte speedMultiplier);
@@ -95,6 +96,7 @@ void setup()
 //LOOP ============================================================================
 void loop()
 {
+  forceExit = false;
   int potVal = analogRead(POT_PIN);
   Serial.print("Potentiometer val = ");
   Serial.println(potVal);
@@ -157,7 +159,7 @@ void heat()
   for (size_t i = 0; i < 254; i++)
   {
     analogWrite(OUTPUT_PIN, i);
-    delay(10);
+    delay(5);
   }
 }
 
@@ -167,6 +169,24 @@ void fadeOut()
   {
     analogWrite(OUTPUT_PIN, i);
     delay(5);
+  }
+}
+
+void blink()
+{
+  int blinkTimes = 2;
+  for (size_t j = 0; j < blinkTimes; j++)
+  {
+    for (size_t i = 0; i <= 125; i++)
+    {
+      analogWrite(OUTPUT_PIN, i);
+      delay(1);
+    }
+    for (size_t i = 125; i > 50; i--)
+    {
+      analogWrite(OUTPUT_PIN, i);
+      delay(2);
+    }
   }
 }
 
@@ -294,9 +314,40 @@ void resetCheck()
 
 void onButtonClick()
 {
+  resetCheck();
+  if (buttonState == 0)
+  {
+    pulseFade = 0;
+    buttonState += 1;
+    timerFlag = true;
+    shutDown = millis() + TIMER_DELAY;
+    pulseDelay = 100;
+    pulseFadeStep = 2;
+  }
+  else if (buttonState == 1)
+  {
+    pulseFade = 0;
+    buttonState += 1;
+    timerFlag = true;
+    shutDown = millis() + TIMER_DELAY * 2;
+    pulseDelay = 1000;
+    pulseFadeStep = 10;
+  }
+  else if (buttonState == 2)
+  {
+    // cброс всех флажков
+    timerFlag = false;
+    analogWrite(LED_PIN, 0);
+    shutDown = 0;
+    pulseDelay = 0;
+    buttonState = 0;
+    pulseFade = 0;
+    pulseFadeStep = 0;
+  }
 }
 
 void onButtonHold()
 {
   modeFlag = !modeFlag;
+  blink();
 }
