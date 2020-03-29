@@ -1,60 +1,47 @@
 #include <Arduino.h>
-// библиотека для сна
-#include <avr/sleep.h>
+#include <avr/sleep.h> // библиотека для сна
 
-//!!!!!!!!!!!!!!! Внимание !!!!!!!!!!!!!!!!!!!!!!!!!!!!! Функция FadeOut - может потребовать дополнительной настройке при смене кол-ва диодов
-//НЕИЗМЕНЯЕМЫЕ ПАРАМЕТРЫ: ========================================================
-
-#define OUTPUT_PIN 11
-// пин, к которому подключен светодиод индикатор
-#define LED_PIN 9
-// пин, к которому подключена кнопка (1йконтакт - пин, 2йконтакт - GND, INPUT_PULLUP, default - HIGH);
-#define BUTTON_PIN 3
-// Аналоговый пин для подключения фотосенсора
-#define SENSOR_PIN 0
-// Аналоговый пин для подключения потенциометра
-#define POT_PIN 2
-//время удержания кнопки для регистрации длинного нажатия (default - 150)
-#define HOLD_DURATION 150
+//ИНТЕРФЕЙСЫ: ========================================================
+#define OUTPUT_PIN 11 // пин, к которому подключена нагрузка
+#define LED_PIN 9     // пин, к которому подключен светодиод индикатор
+#define BUTTON_PIN 3  // пин, к которому подключена кнопка (1йконтакт - пин, 2йконтакт - GND, INPUT_PULLUP, default - HIGH);
+#define SENSOR_PIN 0  // Аналоговый пин для подключения фотосенсора
+#define POT_PIN 2     // Аналоговый пин для подключения потенциометра
 
 //НАСТРОИВАЕМЫЕ ПАРАМЕТРЫ:=========================================================
-// задержка выключения [ms] (default 1 800 000ms = 30min)
-#define TIMER_DELAY 1800000
-// задержка для анимации RGB светодиодов [ms]
-#define THIS_DELAY 300
+#define HOLD_DURATION 150   //время удержания кнопки для регистрации длинного нажатия (default - 150)
+#define TIMER_DELAY 1800000 // задержка выключения [ms] (default 1 800 000ms = 30min)
+#define THIS_DELAY 300      // задержка для анимации RGB светодиодов [ms]
 
-//НАСТРОИВАЕМЫЕ ПАРАМЕТРЫ:=========================================================
-bool prevFlag;
-int prevBr;
-int br;
-// перменные для debounce() .......................................................
-// стартовая позиция для отсчёта прерывания на основе millis() в методе debounce();
-unsigned long start = 0;
-// гистерезис функции debounce
-#define DEBOUNCE_DELAY 50
-volatile int pressTimer = 0;
-//переменные для poll()............................................................
-// время выключения
-unsigned long shutDown = 0;
-// перменные для pulse() ..........................................................
-// Яркость мигающего диода таймера
-#define PULSE_BRIGHTNES 250
-unsigned long pulseDelay;
-unsigned long pulseStart;
-byte pulseFade = 0;
-byte pulseFadeStep = 0;
-int mode = 1;
-// перменные для interrupt() ..........................................................
-// Яркость мигающего диода таймера
+//ИННЦИАЛИЗАЦИЯ ПЕРЕМЕННЫХ: =========================================================
+int potVal;    //loop() показания потенциометра
+int senVal;    //loop() показания фотосенсора
+bool prevFlag; //
+int prevBr;    //
+int br;        //
+
+unsigned long start = 0;     // debounce() стартовая позиция для отсчёта прерывания на основе millis() в методе debounce();
+#define DEBOUNCE_DELAY 50    // debounce() гистерезис функции debounce
+volatile int pressTimer = 0; // debounce()
+
+unsigned long shutDown = 0; // poll() время выключения
+
+#define PULSE_BRIGHTNES 250 // pulse() Яркость мигающего диода таймера
+unsigned long pulseDelay;   // pulse()
+unsigned long pulseStart;   // pulse()
+byte pulseFade = 0;         // pulse()
+byte pulseFadeStep = 0;     // pulse()
+int mode = 1;               // pulse()
+
 // Button input related values
-static const int STATE_NORMAL = 0; // no button activity
-static const int STATE_SHORT = 1;  // short button press
-static const int STATE_LONG = 2;   // long button press
-volatile int resultButton = 0;     // global value set by checkButton()
+static const int STATE_NORMAL = 0; // interrupt() no button activity
+static const int STATE_SHORT = 1;  // interrupt() short button press
+static const int STATE_LONG = 2;   // interrupt() long button press
+volatile int resultButton = 0;     // interrupt() global value set by checkButton()
 
 //FLAGS: ==========================================================================
 // флаг для buttonRoutine()
-bool modeFlag = false;
+volatile bool modeFlag;
 bool glowFlag = false;
 bool timerFlag = false;
 bool pulseFlag = false;
@@ -67,12 +54,12 @@ bool forceExit = false;
 void interrupt();
 bool debounce();
 byte *Wheel(byte WheelPos);
-void heat();
+void heat(int heatTo);
+void fadeOut(int fadeFrom);
 void pwrDown();
 void pulse();
 void poll();
 void blink();
-void fadeOut();
 void kill();
 void animation1(byte speedMultiplier);
 void animation2(byte hueDelta, byte speedMultiplier);
@@ -80,6 +67,8 @@ void resetCheck();
 void onButtonClick();
 void onButtonHold();
 void resetColor();
+void mode1();
+void mode2();
 
 //SETUP ===========================================================================
 void setup()
@@ -90,82 +79,131 @@ void setup()
   pinMode(LED_PIN, OUTPUT);
   pinMode(OUTPUT_PIN, OUTPUT);
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), interrupt, CHANGE); // triggers when LOW
-  heat();
+  potVal = analogRead(POT_PIN);
+  heat(potVal);
 }
 
 //LOOP ============================================================================
 void loop()
 {
   forceExit = false;
-  int potVal = analogRead(POT_PIN);
-  Serial.print("Potentiometer val = ");
-  Serial.println(potVal);
-  int senVal = map(analogRead(SENSOR_PIN), 0, 1024, 1024, 0) + 20;
-  Serial.print("Sensor val = ");
-  Serial.println(senVal);
 
   if (modeFlag)
   {
-    if (senVal >= potVal)
+    if (timerFlag == true)
     {
-      //Если темно
-      glowFlag = true;
-      br = 255;
+      // pulse();
+      poll();
     }
-    else if (senVal < potVal)
+    if (forceExit)
     {
-      //Если светло
-      glowFlag = false;
-      br = 0;
+      return;
     }
-
-    Serial.print("\nglowFlag vs prevGlowFlag ");
-    Serial.print(glowFlag);
-    Serial.print(" vs ");
-    Serial.print(prevFlag);
-    Serial.print("\n");
-
-    if (prevFlag != glowFlag)
-    {
-      if (!prevFlag)
-      {
-        heat();
-      }
-      else if (prevFlag)
-      {
-        fadeOut();
-      }
-    }
+    mode1();
   }
-  else
+  else if (!modeFlag)
   {
-    br = map(potVal, 0, 1024, 255, 0);
+    if (timerFlag == true)
+    {
+      // pulse();
+      poll();
+    }
+    if (forceExit)
+    {
+      return;
+    }
+    mode2();
   }
+}
+
+//FUNCTIONS =======================================================================
+
+//Адаптивная яркость
+void mode1()
+{
+  Serial.print("MODE1  ");
+  potVal = analogRead(POT_PIN);
+  Serial.print("Potentiometer val = ");
+  Serial.println(potVal);
+  Serial.print("ModeFlag = ");
+  Serial.println(modeFlag);
+
+  senVal = map(analogRead(SENSOR_PIN), 0, 1024, 1024, 0) + 20;
+  Serial.print("Sensor val = ");
+  Serial.println(senVal);
+  if (senVal >= potVal)
+  {
+    //Если темно
+    glowFlag = true;
+    br = 255;
+  }
+  else if (senVal < potVal)
+  {
+    //Если светло
+    glowFlag = false;
+    br = 0;
+  }
+
+  Serial.print("\nglowFlag vs prevGlowFlag ");
+  Serial.print(glowFlag);
+  Serial.print(" vs ");
+  Serial.print(prevFlag);
+  Serial.print("\n");
+
+  if (prevFlag != glowFlag)
+  {
+    if (!prevFlag)
+    {
+      heat(255);
+    }
+    else if (prevFlag)
+    {
+      fadeOut(255);
+    }
+  }
+  analogWrite(OUTPUT_PIN, br);
+  prevFlag = glowFlag;
+  prevBr = br;
+
+  Serial.print("Brightness = ");
+  Serial.println(br);
+  Serial.println(" ");
+}
+
+//Ручная настройка яркости
+void mode2()
+{
+  Serial.print("MODE2  ");
+  potVal = analogRead(POT_PIN);
+  Serial.print("Potentiometer val = ");
+  Serial.println(potVal);
+  Serial.print("ModeFlag = ");
+  Serial.println(modeFlag);
+
+  br = map(potVal, 0, 1024, 0, 255);
+  prevBr = br;
 
   analogWrite(OUTPUT_PIN, br);
   prevFlag = glowFlag;
   prevBr = br;
 
-  Serial.print("Brightnes = ");
+  Serial.print("Brightness = ");
   Serial.println(br);
   Serial.println(" ");
-  // delay(1000);
 }
 
-//FUNCTIONS =======================================================================
-
-void heat()
+void heat(int heatTo)
 {
-  for (size_t i = 0; i < 254; i++)
+  for (int i = 0; i < heatTo; i++)
   {
     analogWrite(OUTPUT_PIN, i);
     delay(5);
   }
 }
 
-void fadeOut()
+void fadeOut(int fadeFrom)
 {
-  for (size_t i = 255; i > 0; i--)
+  for (int i = fadeFrom; i > 0; i--)
   {
     analogWrite(OUTPUT_PIN, i);
     delay(5);
@@ -175,14 +213,14 @@ void fadeOut()
 void blink()
 {
   int blinkTimes = 2;
-  for (size_t j = 0; j < blinkTimes; j++)
+  for (int j = 0; j < blinkTimes; j++)
   {
     for (size_t i = 0; i <= 125; i++)
     {
       analogWrite(OUTPUT_PIN, i);
       delay(1);
     }
-    for (size_t i = 125; i > 50; i--)
+    for (int i = 125; i > 50; i--)
     {
       analogWrite(OUTPUT_PIN, i);
       delay(2);
@@ -288,8 +326,8 @@ void poll()
 void pwrDown()
 {
   reset = true;
-  analogWrite(LED_PIN, 0);
-  fadeOut();
+  analogWrite(OUTPUT_PIN, 0);
+  fadeOut(255);
   timerFlag = false;
   // погасить все светодиоды
   delay(1000);
