@@ -29,7 +29,7 @@ volatile int pressTimer = 0; // debounce()
 
 unsigned long shutDown = 0; // poll() время выключения
 
-#define PULSE_BRIGHTNES 250 // pulse() Яркость мигающего диода таймера
+#define PULSE_BRIGHTNES 100 // pulse() Яркость мигающего диода таймера
 unsigned long pulseDelay;   // pulse()
 unsigned long pulseStart;   // pulse()
 byte pulseFade = 0;         // pulse()
@@ -92,11 +92,13 @@ void loop()
   if (modeFlag)
   {
     mode1();
+    delay(10);
   }
   else if (!modeFlag)
   {
     // (defaul режим)
     mode2();
+    delay(10);
   }
 }
 
@@ -146,32 +148,26 @@ void mode1()
   prevFlag = glowFlag;
   prevBr = br;
 
-  Serial.print("Brightness = ");
-  Serial.println(br);
-  Serial.println(" ");
+  // Serial.print("Brightness = ");
+  // Serial.println(br);
+  // Serial.println(" ");
 }
 
 //Ручная настройка яркости (defaul режим)
 void mode2()
 {
-  Serial.print("MODE2  ");
-
   unsigned long currentBr = millis();
-
-  /////
-
   if (abs(brStart - currentBr) > 500)
   {
     //body
     potVal = analogRead(POT_PIN);
-    Serial.print("Potentiometer val = ");
-    Serial.println(potVal);
-    Serial.print("ModeFlag = ");
-    Serial.println(modeFlag);
+    // Serial.print("MODE2  ");
+    // Serial.print("Potentiometer val = ");
+    // Serial.println(potVal);
+    // Serial.print("ModeFlag = ");
+    // Serial.println(modeFlag);
     br = map(potVal, 0, 1024, 0, 255);
-
     // компенсация мерцания на низких значениях яркости
-
     if (br < 5)
     {
       br = 0;
@@ -208,10 +204,9 @@ void mode2()
   }
   prevFlag = glowFlag;
   prevBr = br;
-
-  Serial.print("Brightness = ");
-  Serial.println(br);
-  Serial.println(" ");
+  // Serial.print("Brightness = ");
+  // Serial.println(br);
+  // Serial.println(" ");
   //body
   brStart = millis();
 }
