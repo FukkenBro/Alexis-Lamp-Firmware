@@ -9,9 +9,9 @@
 #define POT_PIN 2     // Аналоговый пин для подключения потенциометра
 
 //НАСТРОИВАЕМЫЕ ПАРАМЕТРЫ:=========================================================
-#define HOLD_DURATION 150   //время удержания кнопки для регистрации длинного нажатия (default - 150)
-#define TIMER_DELAY 1800000 // задержка выключения [ms] (default 1 800 000ms = 30min)
-#define THIS_DELAY 300      // задержка для анимации RGB светодиодов [ms]
+#define HOLD_DURATION 150 //время удержания кнопки для регистрации длинного нажатия (default - 150)
+#define TIMER_DELAY 3000  // задержка выключения [ms] (default 1 800 000ms = 30min)
+#define THIS_DELAY 300    // задержка для анимации RGB светодиодов [ms]
 
 //ИННЦИАЛИЗАЦИЯ ПЕРЕМЕННЫХ: =========================================================
 int potVal;    //loop() показания потенциометра
@@ -19,6 +19,9 @@ int senVal;    //loop() показания фотосенсора
 bool prevFlag; //
 int prevBr;    //
 int br;        //
+
+unsigned long brDelay = 500; // mode2()
+unsigned long brStart;       // mode2()
 
 unsigned long start = 0;     // debounce() стартовая позиция для отсчёта прерывания на основе millis() в методе debounce();
 #define DEBOUNCE_DELAY 50    // debounce() гистерезис функции debounce
@@ -46,14 +49,10 @@ bool glowFlag = false;
 bool timerFlag = false;
 bool pulseFlag = false;
 byte buttonState;
-byte *c;
-bool reset = false;
-bool forceExit = false;
 
 // Иннициаллизация функций ========================================================
 void interrupt();
 bool debounce();
-byte *Wheel(byte WheelPos);
 void heat(int heatTo);
 void fadeOut(int fadeFrom);
 void pwrDown();
@@ -61,12 +60,8 @@ void pulse();
 void poll();
 void blink();
 void kill();
-void animation1(byte speedMultiplier);
-void animation2(byte hueDelta, byte speedMultiplier);
-void resetCheck();
 void onButtonClick();
 void onButtonHold();
-void resetColor();
 void mode1();
 void mode2();
 
@@ -74,44 +69,33 @@ void mode2();
 void setup()
 {
   delay(100);
-  Serial.begin(9600);
+  // Serial.begin(9600);
   pinMode(BUTTON_PIN, INPUT_PULLUP); // defaul HIGH
   pinMode(LED_PIN, OUTPUT);
   pinMode(OUTPUT_PIN, OUTPUT);
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), interrupt, CHANGE); // triggers when LOW
   potVal = analogRead(POT_PIN);
-  heat(potVal);
+  br = map(potVal, 0, 1024, 0, 255);
+  prevBr = br;
+  heat(br);
 }
 
 //LOOP ============================================================================
 void loop()
 {
-  forceExit = false;
+  if (timerFlag == true)
+  {
+    pulse();
+    poll();
+  }
 
   if (modeFlag)
   {
-    if (timerFlag == true)
-    {
-      // pulse();
-      poll();
-    }
-    if (forceExit)
-    {
-      return;
-    }
     mode1();
   }
   else if (!modeFlag)
   {
-    if (timerFlag == true)
-    {
-      // pulse();
-      poll();
-    }
-    if (forceExit)
-    {
-      return;
-    }
+    // (defaul режим)
     mode2();
   }
 }
@@ -121,16 +105,15 @@ void loop()
 //Адаптивная яркость
 void mode1()
 {
-  Serial.print("MODE1  ");
   potVal = analogRead(POT_PIN);
-  Serial.print("Potentiometer val = ");
-  Serial.println(potVal);
-  Serial.print("ModeFlag = ");
-  Serial.println(modeFlag);
-
-  senVal = map(analogRead(SENSOR_PIN), 0, 1024, 1024, 0) + 20;
-  Serial.print("Sensor val = ");
-  Serial.println(senVal);
+  senVal = constrain(map(analogRead(SENSOR_PIN), 0, 1024, 1024, 0) - 100, 0, 1024);
+  // Serial.print("MODE1  ");
+  // Serial.print("Potentiometer val = ");
+  // Serial.println(potVal);
+  // Serial.print("ModeFlag = ");
+  // Serial.println(modeFlag);
+  // Serial.print("Sensor val = ");
+  // Serial.println(senVal);
   if (senVal >= potVal)
   {
     //Если темно
@@ -143,13 +126,11 @@ void mode1()
     glowFlag = false;
     br = 0;
   }
-
-  Serial.print("\nglowFlag vs prevGlowFlag ");
-  Serial.print(glowFlag);
-  Serial.print(" vs ");
-  Serial.print(prevFlag);
-  Serial.print("\n");
-
+  // Serial.print("\nglowFlag vs prevGlowFlag ");
+  // Serial.print(glowFlag);
+  // Serial.print(" vs ");
+  // Serial.print(prevFlag);
+  // Serial.print("\n");
   if (prevFlag != glowFlag)
   {
     if (!prevFlag)
@@ -170,27 +151,72 @@ void mode1()
   Serial.println(" ");
 }
 
-//Ручная настройка яркости
+//Ручная настройка яркости (defaul режим)
 void mode2()
 {
   Serial.print("MODE2  ");
-  potVal = analogRead(POT_PIN);
-  Serial.print("Potentiometer val = ");
-  Serial.println(potVal);
-  Serial.print("ModeFlag = ");
-  Serial.println(modeFlag);
 
-  br = map(potVal, 0, 1024, 0, 255);
-  prevBr = br;
+  unsigned long currentBr = millis();
 
-  analogWrite(OUTPUT_PIN, br);
+  /////
+
+  if (abs(brStart - currentBr) > 500)
+  {
+    //body
+    potVal = analogRead(POT_PIN);
+    Serial.print("Potentiometer val = ");
+    Serial.println(potVal);
+    Serial.print("ModeFlag = ");
+    Serial.println(modeFlag);
+    br = map(potVal, 0, 1024, 0, 255);
+
+    // компенсация мерцания на низких значениях яркости
+
+    if (br < 5)
+    {
+      br = 0;
+    }
+    if (br <= 10 && br >= 5)
+    {
+      br = 5;
+    }
+    else if (br <= 15 && br > 10)
+    {
+      br = 10;
+    }
+    else if (br <= 20 && br > 15)
+    {
+      br = 15;
+    }
+
+    if (prevBr > br)
+    {
+      for (int i = prevBr; i > br; i--)
+      {
+        analogWrite(OUTPUT_PIN, i);
+        delay(2);
+      }
+    }
+    else if (prevBr < br)
+    {
+      for (int i = prevBr; i < br; i++)
+      {
+        analogWrite(OUTPUT_PIN, i);
+        delay(2);
+      }
+    }
+  }
   prevFlag = glowFlag;
   prevBr = br;
 
   Serial.print("Brightness = ");
   Serial.println(br);
   Serial.println(" ");
+  //body
+  brStart = millis();
 }
+
+////
 
 void heat(int heatTo)
 {
@@ -325,34 +351,24 @@ void poll()
 
 void pwrDown()
 {
-  reset = true;
+  fadeOut(br);
   analogWrite(OUTPUT_PIN, 0);
-  fadeOut(255);
+  analogWrite(LED_PIN, 0);
   timerFlag = false;
-  // погасить все светодиоды
   delay(1000);
   kill();
 }
 
 void kill()
 {
+  buttonState = 3;
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   sleep_enable();
   sleep_cpu();
 }
 
-void resetCheck()
-{
-  if (reset == true)
-  {
-    reset = false;
-    asm volatile("  jmp 0");
-  }
-}
-
 void onButtonClick()
 {
-  resetCheck();
   if (buttonState == 0)
   {
     pulseFade = 0;
@@ -381,6 +397,30 @@ void onButtonClick()
     buttonState = 0;
     pulseFade = 0;
     pulseFadeStep = 0;
+  }
+  else if (buttonState == 3)
+  {
+    // cброс всех флажков
+    timerFlag = false;
+    analogWrite(LED_PIN, 0);
+    shutDown = 0;
+    pulseDelay = 0;
+    buttonState = 0;
+    pulseFade = 0;
+    pulseFadeStep = 0;
+    asm volatile("  jmp 0");
+  }
+  else
+  {
+    // cброс всех флажков
+    timerFlag = false;
+    analogWrite(LED_PIN, 0);
+    shutDown = 0;
+    pulseDelay = 0;
+    buttonState = 0;
+    pulseFade = 0;
+    pulseFadeStep = 0;
+    asm volatile("  jmp 0");
   }
 }
 
