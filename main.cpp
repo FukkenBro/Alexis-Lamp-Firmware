@@ -10,7 +10,7 @@
 
 //НАСТРОИВАЕМЫЕ ПАРАМЕТРЫ:=========================================================
 #define HOLD_DURATION 150 //время удержания кнопки для регистрации длинного нажатия (default - 150)
-#define TIMER_DELAY 3000  // задержка выключения [ms] (default 1 800 000ms = 30min)
+#define TIMER_DELAY 1800000  // задержка выключения [ms] (default 1 800 000ms = 30min)
 #define THIS_DELAY 300    // задержка для анимации RGB светодиодов [ms]
 
 //ИННЦИАЛИЗАЦИЯ ПЕРЕМЕННЫХ: =========================================================
@@ -375,7 +375,7 @@ void onButtonClick()
     buttonState += 1;
     timerFlag = true;
     shutDown = millis() + TIMER_DELAY;
-    pulseDelay = 100;
+    pulseDelay = 500;
     pulseFadeStep = 2;
   }
   else if (buttonState == 1)
