@@ -15,7 +15,7 @@
 #define THIS_DELAY 300    // задержка для анимации RGB светодиодов [ms]
 
 //Иннициализация оОбъекта для фитра
-ResponsiveAnalogRead analog(POT_PIN, true);
+ResponsiveAnalogRead analog(POT_PIN, true, 0.005);
 
 //ИННЦИАЛИЗАЦИЯ ПЕРЕМЕННЫХ: =========================================================
 int potVal;    //loop() показания потенциометра
@@ -172,6 +172,9 @@ void mode2()
     // Serial.print("ModeFlag = ");
     // Serial.println(modeFlag);
     br = map(potVal, 0, 1024, 0, 255);
+    if (br <=3){
+      br = 0;
+    }
     if (prevBr > br)
     {
       for (int i = prevBr; i > br; i--)
