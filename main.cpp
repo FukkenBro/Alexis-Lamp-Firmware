@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <ResponsiveAnalogRead.h>
 #include <avr/sleep.h> // библиотека для сна
 
 //ИНТЕРФЕЙСЫ: ========================================================
@@ -10,8 +11,11 @@
 
 //НАСТРОИВАЕМЫЕ ПАРАМЕТРЫ:=========================================================
 #define HOLD_DURATION 150 //время удержания кнопки для регистрации длинного нажатия (default - 150)
-#define TIMER_DELAY 1800000  // задержка выключения [ms] (default 1 800 000ms = 30min)
+#define TIMER_DELAY 1000  // задержка выключения [ms] (default 1 800 000ms = 30min)
 #define THIS_DELAY 300    // задержка для анимации RGB светодиодов [ms]
+
+//Иннициализация оОбъекта для фитра
+ResponsiveAnalogRead analog(POT_PIN, true);
 
 //ИННЦИАЛИЗАЦИЯ ПЕРЕМЕННЫХ: =========================================================
 int potVal;    //loop() показания потенциометра
@@ -83,6 +87,7 @@ void setup()
 //LOOP ============================================================================
 void loop()
 {
+  analog.update();
   if (timerFlag == true)
   {
     pulse();
@@ -160,31 +165,13 @@ void mode2()
   if (abs(brStart - currentBr) > 500)
   {
     //body
-    potVal = analogRead(POT_PIN);
+    potVal = analog.getValue();
     // Serial.print("MODE2  ");
     // Serial.print("Potentiometer val = ");
     // Serial.println(potVal);
     // Serial.print("ModeFlag = ");
     // Serial.println(modeFlag);
     br = map(potVal, 0, 1024, 0, 255);
-    // компенсация мерцания на низких значениях яркости
-    if (br < 5)
-    {
-      br = 0;
-    }
-    if (br <= 10 && br >= 5)
-    {
-      br = 5;
-    }
-    else if (br <= 15 && br > 10)
-    {
-      br = 10;
-    }
-    else if (br <= 20 && br > 15)
-    {
-      br = 15;
-    }
-
     if (prevBr > br)
     {
       for (int i = prevBr; i > br; i--)
