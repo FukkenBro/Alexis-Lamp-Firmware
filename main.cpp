@@ -3,16 +3,18 @@
 #include <avr/sleep.h> // библиотека для сна
 
 //ИНТЕРФЕЙСЫ: ========================================================
-#define OUTPUT_PIN 11 // пин, к которому подключена нагрузка
+#define OUTPUT_PIN 10 // пин, к которому подключена нагрузка (PM пин таймера№1 PIN9 или PIN10)
 #define LED_PIN 9     // пин, к которому подключен светодиод индикатор
 #define BUTTON_PIN 3  // пин, к которому подключена кнопка (1йконтакт - пин, 2йконтакт - GND, INPUT_PULLUP, default - HIGH);
 #define SENSOR_PIN 0  // Аналоговый пин для подключения фотосенсора
 #define POT_PIN 2     // Аналоговый пин для подключения потенциометра
 
 //НАСТРОИВАЕМЫЕ ПАРАМЕТРЫ:=========================================================
-#define HOLD_DURATION 150 //время удержания кнопки для регистрации длинного нажатия (default - 150)
-#define TIMER_DELAY 1800000  // задержка выключения [ms] (default 1 800 000ms = 30min)
-#define THIS_DELAY 300    // задержка для анимации RGB светодиодов [ms]
+#define HOLD_DURATION 150   //время удержания кнопки для регистрации длинного нажатия (default - 150)
+#define TIMER_DELAY 1800000 // задержка выключения [ms] (default 1 800 000ms = 30min)
+#define THIS_DELAY 300      // задержка для анимации RGB светодиодов [ms]
+#define MAX_VAL 1023        // 10bit - 1023, 8bit - 255;
+#define MIN_VAL 0           // задержка для анимации RGB светодиодов [ms]
 
 //Иннициализация оОбъекта для фитра
 ResponsiveAnalogRead analog(POT_PIN, true, 0.005);
@@ -36,8 +38,8 @@ unsigned long shutDown = 0; // poll() время выключения
 #define PULSE_BRIGHTNES 100 // pulse() Яркость мигающего диода таймера
 unsigned long pulseDelay;   // pulse()
 unsigned long pulseStart;   // pulse()
-byte pulseFade = 0;         // pulse()
-byte pulseFadeStep = 0;     // pulse()
+int pulseFade = 0;         // pulse()
+int pulseFadeStep = 0;     // pulse()
 int mode = 1;               // pulse()
 
 // Button input related values
@@ -68,18 +70,23 @@ void onButtonClick();
 void onButtonHold();
 void mode1();
 void mode2();
+void pwm10bit(int pin,int value);
 
 //SETUP ===========================================================================
 void setup()
 {
   delay(100);
-  // Serial.begin(9600);
+  Serial.begin(9600);
   pinMode(BUTTON_PIN, INPUT_PULLUP); // defaul HIGH
   pinMode(LED_PIN, OUTPUT);
   pinMode(OUTPUT_PIN, OUTPUT);
+  // // Настройка ШИМ на пинах 9 и 10
+  // 10bit 15 625Hz
+  TCCR1A = TCCR1A & 0xe0 | 3;
+  TCCR1B = TCCR1B & 0xe0 | 0x09;
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), interrupt, CHANGE); // triggers when LOW
   potVal = analogRead(POT_PIN);
-  br = map(potVal, 0, 1024, 0, 255);
+  br = map(potVal, 0, 1023, 0, MAX_VAL);
   prevBr = br;
   heat(br);
 }
@@ -113,7 +120,7 @@ void loop()
 void mode1()
 {
   potVal = analogRead(POT_PIN);
-  senVal = constrain(map(analogRead(SENSOR_PIN), 0, 1024, 1024, 0) - 100, 0, 1024);
+  senVal = constrain(map(analogRead(SENSOR_PIN), 0, 1023, 1023, 0) - 100, 0, 1023);
   // Serial.print("MODE1  ");
   // Serial.print("Potentiometer val = ");
   // Serial.println(potVal);
@@ -125,7 +132,7 @@ void mode1()
   {
     //Если темно
     glowFlag = true;
-    br = 255;
+    br = MAX_VAL;
   }
   else if (senVal < potVal)
   {
@@ -142,14 +149,14 @@ void mode1()
   {
     if (!prevFlag)
     {
-      heat(255);
+      heat(MAX_VAL);
     }
     else if (prevFlag)
     {
-      fadeOut(255);
+      fadeOut(MAX_VAL);
     }
   }
-  analogWrite(OUTPUT_PIN, br);
+  pwm10bit(OUTPUT_PIN, br);
   prevFlag = glowFlag;
   prevBr = br;
 
@@ -160,45 +167,15 @@ void mode1()
 
 //Ручная настройка яркости (defaul режим)
 void mode2()
-{
-  unsigned long currentBr = millis();
-  if (abs(brStart - currentBr) > 500)
-  {
-    //body
+{  //body
     potVal = analog.getValue();
-    // Serial.print("MODE2  ");
-    // Serial.print("Potentiometer val = ");
-    // Serial.println(potVal);
-    // Serial.print("ModeFlag = ");
-    // Serial.println(modeFlag);
-    br = map(potVal, 0, 1024, 0, 255);
-    if (br <=3){
+    br = potVal;
+    if (br <= 3)
+    {
       br = 0;
     }
-    if (prevBr > br)
-    {
-      for (int i = prevBr; i > br; i--)
-      {
-        analogWrite(OUTPUT_PIN, i);
-        delay(2);
-      }
-    }
-    else if (prevBr < br)
-    {
-      for (int i = prevBr; i < br; i++)
-      {
-        analogWrite(OUTPUT_PIN, i);
-        delay(2);
-      }
-    }
-  }
-  prevFlag = glowFlag;
-  prevBr = br;
-  // Serial.print("Brightness = ");
-  // Serial.println(br);
-  // Serial.println(" ");
-  //body
-  brStart = millis();
+    pwm10bit(OUTPUT_PIN,br);
+    Serial.println(br);
 }
 
 ////
@@ -207,8 +184,8 @@ void heat(int heatTo)
 {
   for (int i = 0; i < heatTo; i++)
   {
-    analogWrite(OUTPUT_PIN, i);
-    delay(5);
+    pwm10bit(OUTPUT_PIN, i);
+    delay(1);
   }
 }
 
@@ -216,8 +193,8 @@ void fadeOut(int fadeFrom)
 {
   for (int i = fadeFrom; i > 0; i--)
   {
-    analogWrite(OUTPUT_PIN, i);
-    delay(5);
+    pwm10bit(OUTPUT_PIN, i);
+    delay(1);
   }
 }
 
@@ -228,12 +205,12 @@ void blink()
   {
     for (size_t i = 0; i <= 125; i++)
     {
-      analogWrite(OUTPUT_PIN, i);
+      pwm10bit(OUTPUT_PIN, i);
       delay(1);
     }
     for (int i = 125; i > 50; i--)
     {
-      analogWrite(OUTPUT_PIN, i);
+      pwm10bit(OUTPUT_PIN, i);
       delay(2);
     }
   }
@@ -307,13 +284,13 @@ void pulse()
     {
       if (pulseFlag == false)
       {
-        pulseFade = constrain((pulseFade + pulseFadeStep), 0, 250);
-        analogWrite(LED_PIN, constrain((PULSE_BRIGHTNES - pulseFade), 1, 255));
+        pulseFade = constrain((pulseFade + pulseFadeStep), 0, 1018);
+        pwm10bit(LED_PIN, constrain((PULSE_BRIGHTNES - pulseFade), 1, 1023));
         pulseFlag = true;
       }
       else
       {
-        analogWrite(LED_PIN, 0);
+        pwm10bit(LED_PIN, 0);
         pulseFlag = false;
         pulseStart = millis();
       }
@@ -337,8 +314,8 @@ void poll()
 void pwrDown()
 {
   fadeOut(br);
-  analogWrite(OUTPUT_PIN, 0);
-  analogWrite(LED_PIN, 0);
+  pwm10bit(OUTPUT_PIN, 0);
+  pwm10bit(LED_PIN, 0);
   timerFlag = false;
   delay(1000);
   kill();
@@ -376,7 +353,7 @@ void onButtonClick()
   {
     // cброс всех флажков
     timerFlag = false;
-    analogWrite(LED_PIN, 0);
+    pwm10bit(LED_PIN, 0);
     shutDown = 0;
     pulseDelay = 0;
     buttonState = 0;
@@ -387,7 +364,7 @@ void onButtonClick()
   {
     // cброс всех флажков
     timerFlag = false;
-    analogWrite(LED_PIN, 0);
+    pwm10bit(LED_PIN, 0);
     shutDown = 0;
     pulseDelay = 0;
     buttonState = 0;
@@ -399,7 +376,7 @@ void onButtonClick()
   {
     // cброс всех флажков
     timerFlag = false;
-    analogWrite(LED_PIN, 0);
+    pwm10bit(LED_PIN, 0);
     shutDown = 0;
     pulseDelay = 0;
     buttonState = 0;
@@ -413,4 +390,11 @@ void onButtonHold()
 {
   modeFlag = !modeFlag;
   blink();
+}
+
+void pwm10bit(int pin, int value){
+  if(value==255){
+    value--;
+  }
+  analogWrite(pin,value);
 }
